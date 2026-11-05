@@ -1,0 +1,64 @@
+{
+  // tasks.json is JSONC — comments are allowed. Same pattern as C:\git\robot_team:
+  // arduino-cli is called by full path because VSCode's integrated terminal caches a stale
+  // PATH; type:process runs the exe directly, so the space in "Program Files" needs no quoting.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      // Run once. The library index MUST be fresh first, or the core install fails on
+      // "Library 'Arduino_RouterBridge@0.4.4' not found".
+      "label": "Setup: UNO Q core",
+      "type": "shell",
+      "command": "& 'C:\\Program Files\\Arduino CLI\\arduino-cli.exe' lib update-index; & 'C:\\Program Files\\Arduino CLI\\arduino-cli.exe' core install arduino:zephyr",
+      "problemMatcher": []
+    },
+    {
+      "label": "Compile UNO Q",
+      "type": "process",
+      "command": "C:\\Program Files\\Arduino CLI\\arduino-cli.exe",
+      "args": ["compile", "--fqbn", "arduino:zephyr:unoq", "firmware/eyes_mcu"],
+      "group": { "kind": "build", "isDefault": true },
+      "presentation": { "echo": true, "reveal": "always", "focus": false, "panel": "shared" },
+      "problemMatcher": []
+    },
+    {
+      // Flashes the MCU over the board's USB-C via adb + remoteocd. The port is only used
+      // to find the board's USB serial number; nothing is written to it.
+      "label": "Upload UNO Q",
+      "type": "process",
+      "command": "C:\\Program Files\\Arduino CLI\\arduino-cli.exe",
+      "args": ["compile", "--upload", "-p", "${input:serialPort}",
+               "--fqbn", "arduino:zephyr:unoq", "firmware/eyes_mcu"],
+      "group": "build",
+      "presentation": { "echo": true, "reveal": "always", "focus": false, "panel": "shared" },
+      "problemMatcher": []
+    },
+    {
+      "label": "List boards",
+      "type": "process",
+      "command": "C:\\Program Files\\Arduino CLI\\arduino-cli.exe",
+      "args": ["board", "list"],
+      "problemMatcher": []
+    },
+    {
+      // Pushes linux/ to the Q and runs the Bridge test ON THE BOARD — the real step-3
+      // numbers. (Running bridge_test.py on the PC also works, via adb forward, but its
+      // timings include USB and it logs to bridge_log_remote.csv instead.)
+      "label": "Run bridge_test on UNO Q",
+      "type": "shell",
+      "command": "$adb = (Get-ChildItem \"$env:LOCALAPPDATA\\Arduino15\\packages\\arduino\\tools\\adb\\*\\adb.exe\" | Select-Object -Last 1).FullName; & $adb shell mkdir -p /home/arduino/chameleon; & $adb push linux/qbridge.py linux/bridge_test.py /home/arduino/chameleon/; & $adb shell 'cd /home/arduino/chameleon && python3 bridge_test.py'",
+      "presentation": { "echo": true, "reveal": "always", "focus": false, "panel": "shared" },
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "serialPort",
+      "description": "UNO Q port (run 'List boards' to find it)",
+      "type": "pickString",
+      "options": ["COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+                  "COM9", "COM10", "COM11", "COM12", "COM13", "COM14", "COM15"],
+      "default": "COM6"
+    }
+  ]
+}

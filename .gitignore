@@ -30,3 +30,10 @@
 *.exe
 *.out
 *.app
+
+# Python
+__pycache__/
+
+# Logs written by linux/ scripts on the board
+bridge_log.csv
+bridge_log_remote.csv

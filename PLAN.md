@@ -126,3 +126,5 @@ Open questions:
 | Date | Change | Result |
 | --- | --- | --- |
 | 2026-10-29 | Plan written | — |
+| 2026-11-05 | Step 3, Bridge test: `firmware/eyes_mcu` flashed with arduino-cli; `linux/bridge_test.py` run on the Q with plain python3 over adb (`linux/qbridge.py` talks to `arduino-router` directly) | **Pass.** `set_led` toggled the MCU LED 6/6. Bridge RTT over 200 calls: min 4.5 ms, median 5.8 ms, p95 6.6 ms, max 8.3 ms. MCU-vs-Linux clock offset is measurable to ±2.9 ms this way, which is too coarse for step 5 on its own |
+| 2026-11-05 | Phase 0 pin check: `LED_BUILTIN` (LED3_R) found to be active-low; `eyes_mcu` fixed (`kLedActiveHigh = false`) and reflashed | **Pass.** Red LED off at rest, lit 3/3 times by `set_led(True)` from Python, in step with the matrix. Phase 0 still needs the camera half (`/dev/video0` MJPEG, steps 1-2) |
