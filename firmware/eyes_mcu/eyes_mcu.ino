@@ -69,7 +69,13 @@ static void served() {
   gLastRpcMs = millis();
 }
 
-static uint32_t rpcPing(uint32_t n) {
+// ⚠ RPC integer PARAMETERS are signed on purpose. arduino-router 0.9.0 (image 558) re-encodes
+// small non-negative ints (msgpack fixint 0..127) as a SIGNED type on the way through, and
+// MsgPack's unpack into an unsigned C++ type rejects every signed encoding ("Wrong type
+// parameter in position: 0"); 128+ arrives unsigned and worked, which hid it. Unpacking into
+// a signed type accepts all integer encodings. Measured 2026-11-05; router 0.5.3 (image 424)
+// passed fixints through unchanged. Return types are unaffected.
+static int64_t rpcPing(int64_t n) {
   served();
   return n;
 }

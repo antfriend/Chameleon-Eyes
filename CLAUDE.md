@@ -79,7 +79,8 @@ export MSYS_NO_PATHCONV=1            # Git Bash: stop /home/... being rewritten 
   True), so **timings from the PC are not the board's**. `bridge_test.py` says so and logs
   to `bridge_log_remote.csv`. VS Code task "Run bridge_test on UNO Q" does the on-board run.
 - Board login is user `arduino` (groups include `dialout`, `video`, `gpiod`, `docker`).
-- ⚠ **Each Bridge call costs ~5.8 ms round trip** (min 4.5 ms, measured 2026-11-05). Don't
+- ⚠ **Each Bridge call costs ~5 ms round trip** (image 558: min 3.9, median 5.0, p95 5.1 ms;
+  image 424 was median 5.8 ms; measured 2026-11-05). Don't
   poll per-servo per-frame over RPC; batch, or have the MCU push timestamped samples.
 - ⚠ **The board's wall clock was wrong** (unix time read as Sept 2025 on 2026-11-05; it
   isn't on a network yet). Use `time.monotonic()` for measurements, not `time.time()`.
@@ -98,11 +99,54 @@ export MSYS_NO_PATHCONV=1            # Git Bash: stop /home/... being rewritten 
 - **`LED_BUILTIN` = LED3_R (PH10) is ACTIVE-LOW**: `digitalWrite(LED_BUILTIN, LOW)` lights
   it (seen on the bench 2026-11-05). `eyes_mcu` handles it with `kLedActiveHigh = false`.
   The other RGB LEDs (LED3_G/B, LED4_R/G/B) are probably the same, but that hasn't been checked.
+- ⚠ **Take RPC integer parameters as SIGNED types** (`int32_t`/`int64_t`). `arduino-router`
+  0.9.0 (image 558) re-encodes small ints 0..127 as a signed msgpack type, and MsgPack's
+  unpack into `uint32_t` rejects that with `Wrong type parameter in position: 0`; 128+
+  arrives unsigned and works, which hides it. Signed C++ types accept every integer
+  encoding. Return types are fine either way.
 - **Bridge RPC:** `provide` handlers run on the Bridge's update thread; `provide_safe` ones
   run on the loop thread. Never `Bridge.call` from inside an RPC handler (MCU–Linux
   deadlock, per the library README).
 - **Single USB-C port:** camera, hub and power share it (PLAN.md risks). Servos get their
   own supply with a shared ground, never the Q's rail.
+
+## Cameras — IMX219 over MIPI-CSI (checked on the board 2026-11-05)
+
+The eyes are two **IMX219** ribbon cameras (Raspberry Pi Camera v2 sensor). The UNO Q has
+**no camera connector of its own**: CSI comes out only on the bottom JMEDIA connector, and
+the **UNO Media Carrier** (ASX00083) breaks it out to two 22-pin MIPI-CSI connectors.
+Nothing can be tested until the carrier arrives.
+
+**Board image: build `20260528-558`** (`/etc/buildinfo`), reflashed 2026-11-05 from the
+first-shipped `20251107-424` with `arduino-flasher-cli` v0.5.4 (`flash unoq`; JCTL jumper on
+the two pins furthest from USB-C, plug in, press Enter during the matrix boot animation).
+The reflash wipes the Linux side; afterwards re-upload `eyes_mcu` and re-push `linux/`.
+Image 424 had no carrier support at all, so don't go back to it.
+
+What image 558 has for cameras:
+- Drivers `imx219.ko` + `qcom-camss.ko`; libcamera + `gstreamer1.0-libcamera`; `cam`,
+  `v4l2-ctl`, `dtc`, `fdtget`.
+- **`arduino-linux-config`**, the official switch (it rewrites the boot DTB and takes effect
+  on reboot). `carrier list` shows the choices:
+  ```
+  media-carrier  camera0  none, type1-2lanes, type1-4lanes
+                 camera1  none, type1-2lanes, type1-4lanes
+                 display  none, 5-dsi-touch-a, 8-dsi-touch-a, 10-dsi-touch-a
+  ```
+  "type1" is the IMX219. Plan for both eyes, once the carrier is fitted:
+  `sudo arduino-linux-config carrier enable media-carrier camera0=type1-2lanes camera1=type1-2lanes`,
+  reboot, then `arduino-linux-config carrier show`, `cam -l` and `media-ctl -p`. Both
+  connectors can run at once (the IMX219 itself is a 2-lane sensor; the 4-lane options
+  exist for other modules). `carrier disable` restores the base DTB. **Don't enable it
+  before the carrier is physically fitted.**
+- Overlays in `/boot/efi/dtb/qcom/`: `…-carrier-media.dtbo`,
+  `…-carrier-media-camera-imx219-csi{0,1}-{2,4}lanes.dtbo`, panel and USB-C video/sound
+  overlays, and the prebuilt `…-carrier-media-full-{2,4}lanes.dtb`.
+- Expect raw Bayer on the V4L2 path; github.com/mcmchris/uno-q-mipi-camera-imx219 does a
+  software ISP, and that will cost CPU in Phase 2.
+- `/dev/video0` and `/dev/video1` are the **Venus H.264 encoder/decoder**, not cameras.
+  A camera would appear as new `/dev/video*` and `/dev/media*` nodes.
+- OpenCV (`cv2`) is not installed yet.
 
 ## Relationship to robot_team
 
