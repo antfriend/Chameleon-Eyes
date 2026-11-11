@@ -28,6 +28,7 @@ firmware/
 linux/                  Python for the Q's Linux side (pushed to the board with adb)
   qbridge.py            Dependency-free Bridge client (msgpack-RPC to arduino-router)
   bridge_test.py        Phase 0 / step 3: LED toggle, Bridge RTT, MCU clock offset
+  grab_frames.py        One JPEG per eye through OpenCV (libcamerasrc GStreamer pipeline)
 .vscode/tasks.json      Setup / Compile / Upload UNO Q, List boards
 ```
 
@@ -115,7 +116,7 @@ export MSYS_NO_PATHCONV=1            # Git Bash: stop /home/... being rewritten 
 The eyes are two **IMX219** ribbon cameras (Raspberry Pi Camera v2 sensor). The UNO Q has
 **no camera connector of its own**: CSI comes out only on the bottom JMEDIA connector, and
 the **UNO Media Carrier** (ASX00083) breaks it out to two 22-pin MIPI-CSI connectors.
-Nothing can be tested until the carrier arrives.
+The carrier is fitted and both cameras stream (see below).
 
 **Board image: build `20260528-558`** (`/etc/buildinfo`), reflashed 2026-11-05 from the
 first-shipped `20251107-424` with `arduino-flasher-cli` v0.5.4 (`flash unoq`; JCTL jumper on
@@ -144,8 +145,24 @@ What image 558 has for cameras:
   overlays, and the prebuilt `…-carrier-media-full-{2,4}lanes.dtb`.
 - Expect raw Bayer on the V4L2 path; github.com/mcmchris/uno-q-mipi-camera-imx219 does a
   software ISP, and that will cost CPU in Phase 2.
-- `/dev/video0` and `/dev/video1` are the **Venus H.264 encoder/decoder**, not cameras.
-  A camera would appear as new `/dev/video*` and `/dev/media*` nodes.
+- **Carrier fitted and enabled 2026-11-11** with the command above (both cameras
+  `type1-2lanes`, display none). After the reboot: `cam -l` lists two `imx219` cameras
+  (`…/cci@5c1b000/i2c-bus@1/sensor@10` is cam 1, `i2c-bus@0` is cam 2), `/dev/media0` is
+  `qcom-camss` with `imx219 2-0010` → `msm_csiphy0` and `imx219 3-0010` → `msm_csiphy1`,
+  and `cam -c N --capture=5` streams from each (default full-resolution frames of
+  32,248,832 bytes at 7–14 fps). libcamera uses the `simple` IPA with
+  `uncalibrated.yaml` (no `imx219.yaml` tuning file).
+- **OpenCV capture works through GStreamer** (2026-11-11, `linux/grab_frames.py`):
+  `cv2.VideoCapture('libcamerasrc camera-name="<id from cam -l>" ! video/x-raw,width=1024,height=768 ! videoconvert ! video/x-raw,format=BGR ! appsink drop=true max-buffers=1 sync=false', cv2.CAP_GSTREAMER)`.
+  libcamera's software ISP hands over debayered frames, so no hand-rolled ISP is needed
+  for a first image. There is no `gst-launch-1.0`/`gst-inspect-1.0` on the board; test
+  pipelines through OpenCV. First frames: both eyes give a recognisable 1024x768 colour
+  image, a little soft, with a cool blue-green cast (uncalibrated IPA), and the scene
+  appears upside down in both, so check mounting orientation before calibration.
+- ⚠ **The `/dev/video*` numbers moved when the carrier was enabled.** `/dev/video0`–`3` are
+  `msm_vfe0_video0`–`3`, `/dev/video4`–`7` are `msm_vfe1_video0`–`3`, and the Venus H.264
+  decoder/encoder are now `/dev/video8`/`9` (they were `video0`/`1`). Look nodes up by
+  `/sys/class/video4linux/videoN/name`, not by number.
 - **OpenCV 4.10.0 is installed** (Debian `python3-opencv`, numpy 2.2.4; 2026-11-11), built
   with GStreamer 1.26, FFmpeg and V4L2. It went on offline (next section): 148 `.deb`
   files, kept on the board in `/home/arduino/debs/` (with `install.sh`) and on the PC in
