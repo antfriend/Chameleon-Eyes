@@ -146,7 +146,30 @@ What image 558 has for cameras:
   software ISP, and that will cost CPU in Phase 2.
 - `/dev/video0` and `/dev/video1` are the **Venus H.264 encoder/decoder**, not cameras.
   A camera would appear as new `/dev/video*` and `/dev/media*` nodes.
-- OpenCV (`cv2`) is not installed yet.
+- **OpenCV 4.10.0 is installed** (Debian `python3-opencv`, numpy 2.2.4; 2026-11-11), built
+  with GStreamer 1.26, FFmpeg and V4L2. It went on offline (next section): 148 `.deb`
+  files, kept on the board in `/home/arduino/debs/` (with `install.sh`) and on the PC in
+  `C:\tmp\unoq-opencv-debs`. A reflash wipes it, so re-push that folder and rerun
+  `install.sh`.
+
+## Debian packages without a network (done for OpenCV 2026-11-11)
+
+The Q stays off the network, so packages go over adb:
+
+1. On the board (no root needed):
+   `apt-get install --print-uris -y -o Debug::NoLocking=1 --no-install-recommends <pkg>`
+   lists the exact URLs, filenames and sizes from the image's own apt lists.
+2. Download those on the PC. Versions the mirror has since replaced return 404; get them
+   from `https://snapshot.debian.org/archive/debian/20260528T000000Z/pool/...` (or
+   `archive/debian-security/...`), the date of image 558.
+3. `adb push` the folder, dry-run with `apt-get install -s -o Debug::NoLocking=1 ./*.deb`,
+   then install with `sudo apt-get install -y --no-install-recommends ./*.deb`. Don't add
+   `--no-download`: apt counts copying local `.deb` files as a fetch and fails with
+   "Unable to fetch some archives".
+
+- ⚠ **`sudo` on the board asks for the `arduino` user's password** and adbd runs as
+  `arduino`, so the install step must be run by hand in an interactive shell
+  (`adb shell -t`). Everything else works without root.
 
 ## Relationship to robot_team
 
