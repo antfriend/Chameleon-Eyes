@@ -49,14 +49,14 @@ Stretch goals, only after phase 4 passes:
      └─────────────────────┘
 ```
 
-The STM32 side owns servo timing and angle logging. The Linux side owns video, calibration and depth. Each camera reaches it over a MIPI-CSI ribbon cable through the Media Carrier, and libcamera's software ISP turns the raw sensor data into color frames for OpenCV. The pose + depth stage (★) is the new work: it joins timestamped angles with camera frames. The optional ESP32 link lets existing Agent 32 nodes use the gaze and depth data.
+The STM32 side owns servo timing and angle logging. The Linux side owns video, calibration and depth. Each camera reaches it over a MIPI-CSI ribbon cable through the Media Carrier, and `linux/eye_capture.py` turns the raw sensor data into color frames for OpenCV (libcamera can't run both cameras at once on this board). The pose + depth stage (★) is the new work: it joins timestamped angles with camera frames. The optional ESP32 link lets existing Agent 32 nodes use the gaze and depth data.
 
 ## Build steps
 
 Work in this order. Each step ends with a check, and if a check fails, stop and fix it before going on.
 
 1. **Bring up the Q.** Flash board image 558 or later, fit the Media Carrier, enable both camera connectors with `arduino-linux-config`, and reboot. Check: `cam -l` lists two `imx219` cameras and `cam -c N --capture=5` streams from each. (Done 2026-11-11.)
-2. **Capture test.** Grab frames from both eyes at once with OpenCV through the `libcamerasrc` GStreamer pipeline, at 1024x768 (the size that works today) and at 640x480 if libcamera will deliver it. Record frame rate, CPU load and dropped frames. Check: both eyes hold 30 fps for 5 minutes with no growth in dropped frames.
+2. **Capture test.** Grab frames from both eyes at once with `linux/eye_capture.py` (1640x1232 raw at 30 fps, converted to color at 820x616). Record frame rate, CPU load and dropped frames. Check: both eyes hold 30 fps for 5 minutes with no growth in dropped frames.
 3. **Bridge test.** Write a minimal MCU sketch and a Python caller that pass a value back and forth over the Bridge. Check: round-trip latency logged.
 4. **One servo.** Power the servo from the separate 5 V supply with its ground joined to the Q, drive its signal pin from the MCU, and find its safe pulse limits. Fit the pulse-to-angle map by measuring the angle with the camera and a checkerboard. Check: commanded and camera-measured angles agree within 1°, approached from both directions.
 5. **Timestamping.** Have the MCU log (commanded angle, microsecond timestamp) and the Linux side log (frame, timestamp). Measure the offset between the two clocks and the camera capture lag with a blinking-LED or moving-target test.
@@ -111,7 +111,7 @@ Notes:
 - **Echo.** With an open speaker and microphone at both ends, each side hears itself back and the loop can howl. Start with push-to-talk, and add echo cancellation only if that proves too clumsy.
 - **Sharing costs CPU.** JPEG encoding runs only while somebody is watching, but while they are, it competes with the software ISP and the stereo work.
 
-Not yet checked on a board: that two cameras open at once in one process, whether the access point can be started without `sudo`, whether the Media Carrier's audio devices appear in `aplay -l` and `arecord -l` on image 558, and what the image offers for showing a full-screen page or window on the display.
+What the board offers for the later stages (looked at 2026-11-15, nothing tried): `wlan0` supports access-point mode and the `arduino` user appears to have permission to start a hotspot; there is one ALSA sound card with playback and capture devices; and the image runs an XFCE desktop with Chromium installed, so the viewer Q can show the page in a full-screen browser. Still to do: start the access point, play and record through the carrier's speaker and microphone, and enable a display on the viewer Q.
 
 ## Risks and open questions
 
@@ -123,10 +123,11 @@ The biggest risk is timing. If the camera capture lag is large or variable, movi
 | No frame sync between the eyes | The two frames of a pair are exposed at different moments | Pair frames by timestamp; interpolate each eye's angle to its own frame time; compute depth only when the scene and eyes are slow enough |
 | Single USB-C port on the Q | It carries power and the adb link; anything else on USB needs a hub with power pass-through | The cameras are on CSI, so the core build needs no hub. Only the optional FPV dongle does |
 | Ribbon cables on moving eyes | A stiff ribbon loads the small tilt servo and pulls the eye off its commanded angle | Long, flexible ribbons with a slack loop; check for drag at the travel limits |
-| Uncalibrated image pipeline | libcamera has no IMX219 tuning file here, so frames are soft with a blue-green cast, which may hurt feature matching | Geometry doesn't depend on color; add a tuning file or fix white balance if matching suffers |
+| Home-made image pipeline | `eye_capture.py` does its own exposure and white balance with no color matrix or lens correction, and each eye adjusts on its own, so the two images can differ in brightness | Geometry doesn't depend on color; lock both eyes to the same exposure if matching suffers |
+| Dim light | Indoors the exposure sits at its 30 fps limit with high gain, which means noise and motion blur while an eye moves | Add light; shoot calibration frames while stationary |
 | No servo feedback, backlash and flex | The commanded angle may not match where the eye actually points, and nothing reports the difference | Pulse-to-angle calibration per axis; limit command speed so the servo keeps up; online epipolar correction; stiff mounts |
 | Servo current spikes | A dip on the Q's rail would reboot Linux or drop a camera | Separate 5 V 4 A servo supply with shared ground and a bulk capacitor (HARDWARE.md) |
-| CPU load on the Q | The software ISP for two cameras, SGBM and feature matching compete for the CPU | Profile in phase 2; downscale before matching |
+| CPU load on the Q | Converting raw frames for two cameras, SGBM and feature matching compete for the CPU | Profile in phase 2; downscale before matching |
 
 Open questions:
 
@@ -140,8 +141,7 @@ Open questions:
 - [ ] Get a 5 V 4 A servo supply, a 1000 µF capacitor and a servo power header; confirm the HS-55 and HS-322HD accept the Q's 3.3 V signal
 - [ ] Run step 2 of the build plan: the 5-minute frame-rate test on both eyes (steps 1 and 3 are done)
 - [ ] Measure the camera capture lag with a blinking-LED test
-- [ ] Run `eye_server.py` on the Q (VS Code task "Run eye_server on UNO Q") and view both eyes from the PC
-- [ ] On the Q, check the Wi-Fi access point, the carrier's audio devices and the display options for the remote link
+- [ ] Play and record through the carrier's speaker and microphone (first half of stage R4)
 
 ## Changelog
 
@@ -157,3 +157,7 @@ Open questions:
 | 2026-11-15 | Design change: the four steppers and driver boards are replaced by four PWM hobby servos (2 x HS-322HD for pan, 2 x HS-55 for tilt) on a separate 5 V 4 A supply. Plan, hardware list and README updated | Documents only; nothing wired or tested. The servos give no position feedback, so the phase 1 check now compares the commanded angle with a camera-measured one |
 | 2026-11-15 | Plan brought in line with the cameras actually fitted: two IMX219 modules on MIPI-CSI through the Media Carrier, replacing the USB cameras and hub the plan was written for | Documents only. Phase 0 check, build steps 1-2, the architecture diagram, risks and next actions rewritten; USB bandwidth and dual-lens module risks dropped |
 | 2026-11-15 | Remote link planned (stages R1-R4) and `linux/eye_server.py` written: a website on the Q with an MJPEG stream and snapshot per eye | Tested on the PC only, with `--test-pattern`: page, `/status`, snapshots, two viewers on one stream and an OpenCV client all work. **Not run on the Q** (it was not connected), so the cameras, frame rate and CPU load are untested |
+| 2026-11-15 | Stage R1 on the Q. libcamera could not run both cameras at once (both routed through `msm_csid0`), so `linux/eye_capture.py` was written: its own `media-ctl` routes, raw 8-bit Bayer at 1640x1232 through `v4l2-ctl`, then debayer, auto exposure, grey-world white balance and gamma in Python. `eye_server.py` now uses it | **Pass**, viewed from the PC through `adb forward`. Both eyes capture at 30.0 fps together and each stream delivered 146 frames in 10 s (820x616, 15 fps cap). The server process used about 30% of one core idle and about 140% of one core (of four) with both streams watched. Both images are upright with neutral colour. In room light the exposure was at its 30 fps limit with analogue gain 5-8x, so expect noise and motion blur indoors. Run for about a minute only, not the 5-minute step-2 check |
+| 2026-11-15 | Stage R2, first half: Wi-Fi access point `chameleon` started on the eye Q with `nmcli device wifi hotspot` (WPA2, profile `chameleon-ap`, no sudo) | Access point is up and the Q is `10.42.0.1`; the website answers on `http://10.42.0.1:8080/` from the Q itself. The profile does not start by itself after a reboot |
+| 2026-11-15 | Stage R2 with a phone as the client: joined the `chameleon` Wi-Fi and opened `http://10.42.0.1:8080/` in the phone's browser | **Pass.** Both live streams play on the phone. The second-Q client (stage R3) is still to do. Start at boot is then installed on the board (crontab `@reboot` running `linux/start_eyes.sh`, and autoconnect on the `chameleon-ap` profile), with no sudo |
+| 2026-11-15 | Start at boot checked by a power cycle (the board refuses a reboot over adb without root) | **Pass.** With nothing started by hand, the `chameleon` Wi-Fi came up, cron started `start_eyes.sh`, the server started first time, both eyes captured at 30.0 fps, and both streams played on the phone |

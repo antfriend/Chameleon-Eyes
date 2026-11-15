@@ -29,8 +29,11 @@ linux/                  Python for the Q's Linux side (pushed to the board with 
   qbridge.py            Dependency-free Bridge client (msgpack-RPC to arduino-router)
   bridge_test.py        Phase 0 / step 3: LED toggle, Bridge RTT, MCU clock offset
   grab_frames.py        One JPEG per eye through OpenCV (libcamerasrc GStreamer pipeline)
+  eye_capture.py        Both eyes at once: raw Bayer over V4L2 with its own media-ctl routes,
+                        debayer, auto exposure, white balance (libcamera can't run both)
   eye_server.py         Website on the Q: MJPEG stream + snapshot per eye, /status (stdlib
                         HTTP; `--test-pattern` runs it on a PC with no cameras)
+  start_eyes.sh         Keeps eye_server.py running (restart loop); run by cron @reboot
 .vscode/tasks.json      Setup / Compile / Upload UNO Q, List boards
 ```
 
@@ -82,6 +85,11 @@ export MSYS_NO_PATHCONV=1            # Git Bash: stop /home/... being rewritten 
   True), so **timings from the PC are not the board's**. `bridge_test.py` says so and logs
   to `bridge_log_remote.csv`. VS Code task "Run bridge_test on UNO Q" does the on-board run.
 - Board login is user `arduino` (groups include `dialout`, `video`, `gpiod`, `docker`).
+- **adb from Git Bash:** with `MSYS_NO_PATHCONV=1` set, local paths are not converted
+  either, so give `adb push`/`pull` (and `curl -o`) a Windows path (`cygpath -w`). To leave
+  a program running on the board, detach it or `adb shell` never returns:
+  `setsid nohup python3 x.py > x.log 2>&1 < /dev/null &`. Stop it with
+  `pkill -f '[e]ye_server.py'`; without the brackets `pkill -f` also kills its own shell.
 - ⚠ **Each Bridge call costs ~5 ms round trip** (image 558: min 3.9, median 5.0, p95 5.1 ms;
   image 424 was median 5.8 ms; measured 2026-11-05). Don't
   poll per-servo per-frame over RPC; batch, or have the MCU push timestamped samples.
@@ -162,6 +170,24 @@ What image 558 has for cameras:
   pipelines through OpenCV. First frames: both eyes give a recognisable 1024x768 colour
   image, a little soft, with a cool blue-green cast (uncalibrated IPA), and the scene
   appears upside down in both, so check mounting orientation before calibration.
+- ⚠ **libcamera cannot run both cameras at once** (libcamera 0.4.0, checked 2026-11-15).
+  Its `simple` pipeline routes both sensors through `msm_csid0` → `msm_vfe0_rdi0`, so the
+  second to start fails with `Failed to setup link 'msm_csiphy1'[1] -> 'msm_csid0'[0]:
+  Device or resource busy`; `cam -c1 -c2` fails the same way. One camera at a time is fine
+  (`grab_frames.py` opens them in turn).
+- **Both at once: `linux/eye_capture.py`** (2026-11-15). It sets the routes with
+  `media-ctl` (no root needed): eye 1 = `msm_csiphy0` → `msm_csid0` → `msm_vfe0_rdi0` →
+  `msm_vfe0_video0`, eye 2 = `msm_csiphy1` → `msm_csid1` → `msm_vfe1_rdi0` →
+  `msm_vfe1_video0`, format `SRGGB8_1X8/1640x1232` on every pad, then
+  `v4l2-ctl --stream-mmap --stream-to=-` pipes 8-bit Bayer frames (pixel format `RGGB`,
+  2,020,480 bytes each, no row padding) into Python. Debayer + resize to 820x616 takes
+  about 7 ms a frame and JPEG about 9 ms. The mode runs at 60 fps with the default
+  `vertical_blanking=475`; the module sets 2182 for 30 fps. Sensor controls are on the
+  sensor subdevice (`exposure`, `analogue_gain` 0–232 meaning 256/(256−code),
+  `vertical_blanking`, flips). With this path both eyes come out upright.
+- ⚠ **`cam -l` order is not stable.** On 2026-11-15 camera 1 was `i2c-bus@0`; on 2026-11-11
+  it was `i2c-bus@1`. Number eyes by CSI PHY, as `eye_capture.py` does: `imx219 2-0010` is
+  on `msm_csiphy0` (eye 1), `imx219 3-0010` on `msm_csiphy1` (eye 2).
 - ⚠ **The `/dev/video*` numbers moved when the carrier was enabled.** `/dev/video0`–`3` are
   `msm_vfe0_video0`–`3`, `/dev/video4`–`7` are `msm_vfe1_video0`–`3`, and the Venus H.264
   decoder/encoder are now `/dev/video8`/`9` (they were `video0`/`1`). Look nodes up by
@@ -171,6 +197,38 @@ What image 558 has for cameras:
   files, kept on the board in `/home/arduino/debs/` (with `install.sh`) and on the PC in
   `C:\tmp\unoq-opencv-debs`. A reflash wipes it, so re-push that folder and rerun
   `install.sh`.
+
+## Remote link — what the image offers (looked at 2026-11-15)
+
+For PLAN.md's remote-link stages (website → second Q with a screen → two-way audio):
+
+- **Wi-Fi:** `wlan0` supports access-point mode, NetworkManager and `dnsmasq` are
+  installed, and `nmcli general permissions` gives the `arduino` user `wifi.share.*` and
+  `settings.modify.system`. **Access point started 2026-11-15, no sudo needed:**
+  `nmcli device wifi hotspot ifname wlan0 con-name chameleon-ap ssid chameleon password <pw>`
+  (WPA2, so the password must be 8–63 characters; it is not recorded in this repo). The Q
+  becomes `10.42.0.1/24` and hands out addresses, so the website is
+  `http://10.42.0.1:8080/`. The profile is saved with autoconnect off: bring it back after
+  a reboot with `nmcli connection up chameleon-ap`, stop it with
+  `nmcli connection down chameleon-ap`. A saved client profile `D3DO` has autoconnect on.
+  A phone joined it and played both streams (2026-11-15).
+- **Start at boot (installed 2026-11-15, confirmed by a power cycle):** no user session
+  exists at boot (no autologin, no lingering), but `cron` is active and the `arduino` user
+  may use `crontab`, so no sudo is needed. The crontab has
+  `@reboot /home/arduino/chameleon/start_eyes.sh`, and `chameleon-ap` has
+  `connection.autoconnect yes` with `connection.autoconnect-priority 10` so it wins over
+  `D3DO`. Undo with `crontab -r` and
+  `nmcli connection modify chameleon-ap connection.autoconnect no`.
+- ⚠ **The board cannot be rebooted over adb without root:** `adb reboot` returns
+  `error: closed` and `systemctl reboot` asks for authentication. Power-cycle it, or run
+  `sudo reboot` in an interactive shell.
+- **Audio:** one ALSA card, `Arduino-Imola-HPH-LOUT` (card 0), with playback and capture
+  devices `MultiMedia1`–`4`. `aplay`/`arecord`, `pw-cat`/`pw-record` and `wpctl` are
+  installed; PipeWire belongs to the desktop session and is not reachable from a bare
+  `adb shell`. No sound played or recorded yet.
+- **Display:** `lightdm` is active (XFCE, `graphical.target`), `chromium` is installed, and
+  OpenCV has its Qt5 GUI. DRM shows `card0-DP-1` only, because the carrier display option
+  is `none` on this board.
 
 ## Debian packages without a network (done for OpenCV 2026-11-11)
 

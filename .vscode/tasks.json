@@ -52,10 +52,12 @@
     },
     {
       // Pushes the camera scripts, forwards the Q's port 8080 to this PC and starts the
-      // website. Open http://localhost:8080/ while it runs; Ctrl+C in the terminal stops it.
+      // website in this terminal. It first stops the copy that start_eyes.sh runs from boot,
+      // and that copy stays stopped until the next reboot. Open http://localhost:8080/
+      // while it runs; Ctrl+C in the terminal stops it.
       "label": "Run eye_server on UNO Q",
       "type": "shell",
-      "command": "$adb = (Get-ChildItem \"$env:LOCALAPPDATA\\Arduino15\\packages\\arduino\\tools\\adb\\*\\adb.exe\" | Select-Object -Last 1).FullName; & $adb shell mkdir -p /home/arduino/chameleon; & $adb push linux/grab_frames.py linux/eye_server.py /home/arduino/chameleon/; & $adb forward tcp:8080 tcp:8080; & $adb shell -t 'cd /home/arduino/chameleon && python3 eye_server.py'",
+      "command": "$adb = (Get-ChildItem \"$env:LOCALAPPDATA\\Arduino15\\packages\\arduino\\tools\\adb\\*\\adb.exe\" | Select-Object -Last 1).FullName; & $adb shell mkdir -p /home/arduino/chameleon; & $adb push linux/eye_capture.py linux/eye_server.py /home/arduino/chameleon/; & $adb forward tcp:8080 tcp:8080; & $adb shell -t 'pkill -f [s]tart_eyes.sh; pkill -f [e]ye_server.py; cd /home/arduino/chameleon && python3 eye_server.py'",
       "presentation": { "echo": true, "reveal": "always", "focus": false, "panel": "dedicated" },
       "problemMatcher": []
     }
