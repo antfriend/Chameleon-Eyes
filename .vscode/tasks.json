@@ -49,6 +49,15 @@
       "command": "$adb = (Get-ChildItem \"$env:LOCALAPPDATA\\Arduino15\\packages\\arduino\\tools\\adb\\*\\adb.exe\" | Select-Object -Last 1).FullName; & $adb shell mkdir -p /home/arduino/chameleon; & $adb push linux/qbridge.py linux/bridge_test.py /home/arduino/chameleon/; & $adb shell 'cd /home/arduino/chameleon && python3 bridge_test.py'",
       "presentation": { "echo": true, "reveal": "always", "focus": false, "panel": "shared" },
       "problemMatcher": []
+    },
+    {
+      // Pushes the camera scripts, forwards the Q's port 8080 to this PC and starts the
+      // website. Open http://localhost:8080/ while it runs; Ctrl+C in the terminal stops it.
+      "label": "Run eye_server on UNO Q",
+      "type": "shell",
+      "command": "$adb = (Get-ChildItem \"$env:LOCALAPPDATA\\Arduino15\\packages\\arduino\\tools\\adb\\*\\adb.exe\" | Select-Object -Last 1).FullName; & $adb shell mkdir -p /home/arduino/chameleon; & $adb push linux/grab_frames.py linux/eye_server.py /home/arduino/chameleon/; & $adb forward tcp:8080 tcp:8080; & $adb shell -t 'cd /home/arduino/chameleon && python3 eye_server.py'",
+      "presentation": { "echo": true, "reveal": "always", "focus": false, "panel": "dedicated" },
+      "problemMatcher": []
     }
   ],
   "inputs": [

@@ -29,6 +29,8 @@ linux/                  Python for the Q's Linux side (pushed to the board with 
   qbridge.py            Dependency-free Bridge client (msgpack-RPC to arduino-router)
   bridge_test.py        Phase 0 / step 3: LED toggle, Bridge RTT, MCU clock offset
   grab_frames.py        One JPEG per eye through OpenCV (libcamerasrc GStreamer pipeline)
+  eye_server.py         Website on the Q: MJPEG stream + snapshot per eye, /status (stdlib
+                        HTTP; `--test-pattern` runs it on a PC with no cameras)
 .vscode/tasks.json      Setup / Compile / Upload UNO Q, List boards
 ```
 

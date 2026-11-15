@@ -93,6 +93,26 @@ Before relying on the link: match the transmitter's band and channel to the rece
 
 **Regulatory note:** 5.8 GHz transmit power and channel rules vary by country, and some FPV channels fall outside amateur-radio and unlicensed allocations. Check your local rules before transmitting.
 
+## Remote link: website, viewer Q and two-way audio
+
+The eye Q shares its images through a website it serves itself, with no Internet involved. In the long run the main client is a second UNO Q with a screen, and the two boards also carry two-way audio through their Media Carrier speaker and microphone.
+
+| Stage | What | Check |
+| --- | --- | --- |
+| R1. Website | `linux/eye_server.py` on the eye Q: a page with both eyes, an MJPEG stream and a snapshot per eye, and `/status`. Standard library plus OpenCV, so nothing to install | Both eyes play in a PC browser at `http://localhost:8080/` through `adb forward`, with the capture rate from `/status` recorded |
+| R2. Network | A Wi-Fi link between the two Qs with no router and no Internet: the eye Q runs an access point and the viewer Q joins it | The viewer Q opens the page by the eye Q's address |
+| R3. Viewer Q | The second Q shows the streams full screen on its display | Both eyes on screen within a few seconds of power-up, with the delay measured |
+| R4. Audio | Each Q sends its microphone to the other's speaker | Speech is understandable both ways with no howling |
+
+Notes:
+
+- **The server has no login.** Anyone who can reach the port can watch, which is acceptable on a private access point and not on a shared network.
+- **Audio stays out of the browser.** Browsers allow microphone capture only on HTTPS or localhost, and an offline board has no easy certificate. The plan is a small native sender and receiver on each Q instead, using ALSA or GStreamer.
+- **Echo.** With an open speaker and microphone at both ends, each side hears itself back and the loop can howl. Start with push-to-talk, and add echo cancellation only if that proves too clumsy.
+- **Sharing costs CPU.** JPEG encoding runs only while somebody is watching, but while they are, it competes with the software ISP and the stereo work.
+
+Not yet checked on a board: that two cameras open at once in one process, whether the access point can be started without `sudo`, whether the Media Carrier's audio devices appear in `aplay -l` and `arecord -l` on image 558, and what the image offers for showing a full-screen page or window on the display.
+
 ## Risks and open questions
 
 The biggest risk is timing. If the camera capture lag is large or variable, moving-eye stereo degrades quickly, so measuring it is the first real experiment.
@@ -120,6 +140,8 @@ Open questions:
 - [ ] Get a 5 V 4 A servo supply, a 1000 µF capacitor and a servo power header; confirm the HS-55 and HS-322HD accept the Q's 3.3 V signal
 - [ ] Run step 2 of the build plan: the 5-minute frame-rate test on both eyes (steps 1 and 3 are done)
 - [ ] Measure the camera capture lag with a blinking-LED test
+- [ ] Run `eye_server.py` on the Q (VS Code task "Run eye_server on UNO Q") and view both eyes from the PC
+- [ ] On the Q, check the Wi-Fi access point, the carrier's audio devices and the display options for the remote link
 
 ## Changelog
 
@@ -134,3 +156,4 @@ Open questions:
 | 2026-11-11 | First images: `linux/grab_frames.py` opens each eye with OpenCV through a `libcamerasrc` GStreamer pipeline and saves a 1024x768 JPEG | **Pass.** Both eyes return a recognisable colour frame and their views overlap. Images are a little soft, have a blue-green cast, and the scene is upside down in both. The script's warm-up rate (about 60 fps over 30 frames) is not a step-2 frame-rate measurement; the 5-minute 30 fps check is still to do |
 | 2026-11-15 | Design change: the four steppers and driver boards are replaced by four PWM hobby servos (2 x HS-322HD for pan, 2 x HS-55 for tilt) on a separate 5 V 4 A supply. Plan, hardware list and README updated | Documents only; nothing wired or tested. The servos give no position feedback, so the phase 1 check now compares the commanded angle with a camera-measured one |
 | 2026-11-15 | Plan brought in line with the cameras actually fitted: two IMX219 modules on MIPI-CSI through the Media Carrier, replacing the USB cameras and hub the plan was written for | Documents only. Phase 0 check, build steps 1-2, the architecture diagram, risks and next actions rewritten; USB bandwidth and dual-lens module risks dropped |
+| 2026-11-15 | Remote link planned (stages R1-R4) and `linux/eye_server.py` written: a website on the Q with an MJPEG stream and snapshot per eye | Tested on the PC only, with `--test-pattern`: page, `/status`, snapshots, two viewers on one stream and an OpenCV client all work. **Not run on the Q** (it was not connected), so the cameras, frame rate and CPU load are untested |
