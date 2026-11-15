@@ -2,7 +2,7 @@
 
 ## What this is
 
-A chameleon robot head: two USB-camera eyes, each on its own pan/tilt bus-servo mount,
+A chameleon robot head: two IMX219 CSI-camera eyes, each on its own pan/tilt hobby-servo mount (HS-322HD pan, HS-55 tilt, PWM, no feedback),
 aimed independently and doing moving-eye stereo when their views overlap. The brain is an
 **Arduino UNO Q**. Read [PLAN.md](PLAN.md) first (phases, build steps, pass checks); parts
 are in [HARDWARE.md](HARDWARE.md). Record each completed build step in the PLAN.md
@@ -13,7 +13,7 @@ The UNO Q is two computers on one board, and the code is split the same way:
 | Half | Chip | Runs | Code |
 | --- | --- | --- | --- |
 | MCU | STM32U585 (Cortex-M33 @160 MHz), Zephyr-based Arduino core | servo loop, timestamped angle log | `firmware/eyes_mcu/` |
-| Linux | Qualcomm QRB2210, Debian | USB video, OpenCV, calibration, depth | `linux/` |
+| Linux | Qualcomm QRB2210, Debian | CSI video, OpenCV, calibration, depth | `linux/` |
 
 They talk over an internal UART owned by `arduino-router` on the Linux side;
 **Arduino_RouterBridge** turns it into RPC: `Bridge.provide(...)` on the MCU,
@@ -96,7 +96,7 @@ export MSYS_NO_PATHCONV=1            # Git Bash: stop /home/... being rewritten 
 - **Hardware UARTs:** `Serial1` = `usart1` on header **D0 (RX, PB7) / D1 (TX, PB6)**, and it
   is also Zephyr's boot console, so boot text appears on it after a reset. `lpuart1` is the
   router link to Linux, so don't touch it. `usart3` (PB10/PB11) is the other free UART,
-  a candidate for the half-duplex servo bus.
+  not needed by the PWM servos.
 - **`LED_BUILTIN` = LED3_R (PH10) is ACTIVE-LOW**: `digitalWrite(LED_BUILTIN, LOW)` lights
   it (seen on the bench 2026-11-05). `eyes_mcu` handles it with `kLedActiveHigh = false`.
   The other RGB LEDs (LED3_G/B, LED4_R/G/B) are probably the same, but that hasn't been checked.
@@ -108,8 +108,9 @@ export MSYS_NO_PATHCONV=1            # Git Bash: stop /home/... being rewritten 
 - **Bridge RPC:** `provide` handlers run on the Bridge's update thread; `provide_safe` ones
   run on the loop thread. Never `Bridge.call` from inside an RPC handler (MCU–Linux
   deadlock, per the library README).
-- **Single USB-C port:** camera, hub and power share it (PLAN.md risks). Servos get their
-  own supply with a shared ground, never the Q's rail.
+- **Single USB-C port:** it carries power and adb; the cameras are on CSI, so the core
+  build needs no hub (PLAN.md risks). Servos get their
+  own supply (5 V, 4 A, see HARDWARE.md) with a shared ground, never the Q's rail.
 
 ## Cameras — IMX219 over MIPI-CSI (checked on the board 2026-11-05)
 
